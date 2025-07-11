@@ -1,6 +1,26 @@
 provider "aws" {
   region = "us-west-2"
 }
+# -----------------------------
+# Dynamo DB table to store chat 
+# -----------------------------
+
+resource "aws_dynamodb_table" "chat_logs" {
+  name           = "chat_logs"
+  billing_mode   = "PAY_PER_REQUEST"
+  hash_key       = "user_id"
+  range_key      = "timestamp"
+
+  attribute {
+    name = "user_id"
+    type = "S"
+  }
+
+  attribute {
+    name = "timestamp"
+    type = "S"
+  }
+}
 
 # -----------------------------
 # IAM Role for Lambda function
@@ -56,37 +76,33 @@ resource "aws_iam_role_policy" "lambda_dynamodb_policy" {
 }
 
 # -----------------------------
-# Creates Lambda function
+# Creates Lambda function - For Post
 # -----------------------------
 
-resource "aws_lambda_function" "chat_handler" {
-  function_name = "chatHandler"
-  filename      = "${path.module}/../lambda/chat_handler.zip"
-  handler       = "lambda_function.lambda_handler"
+resource "aws_lambda_function" "chat_post_handler" {
+  function_name = "chatPostHandler"
+  filename      = "${path.module}/../lambda/chat_post_handler.zip"
+  handler       = "chat_post_handler.lambda_handler"
   runtime       = "python3.11"
   role          = aws_iam_role.lambda_exec_role.arn
-  source_code_hash = filebase64sha256("${path.module}/../lambda/chat_handler.zip")
+  source_code_hash = filebase64sha256("${path.module}/../lambda/chat_post_handler.zip")
+  environment {
+    variables = {
+        OPENAI_API_KEY = var.openai_api_key
+    }
+  }
 }
-
 # -----------------------------
-# Dynamo DB table to store chat 
+# Creates Lambda function - For Get
 # -----------------------------
 
-resource "aws_dynamodb_table" "chat_logs" {
-  name           = "chat_logs"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "user_id"
-  range_key      = "timestamp"
-
-  attribute {
-    name = "user_id"
-    type = "S"
-  }
-
-  attribute {
-    name = "timestamp"
-    type = "S"
-  }
+resource "aws_lambda_function" "chat_get_handler" {
+  function_name = "chatGetHandler"
+  filename      = "${path.module}/../lambda/chat_get_handler.zip"
+  handler       = "chat_get_handler.lambda_handler"
+  runtime       = "python3.11"
+  role          = aws_iam_role.lambda_exec_role.arn
+  source_code_hash = filebase64sha256("${path.module}/../lambda/chat_get_handler.zip")
 }
 
 # -----------------------------
@@ -104,13 +120,25 @@ resource "aws_apigatewayv2_api" "chat_api" {
 }
 
 # -----------------------------
-# Setup API Gateway integration with Lambda
+# Setup API Gateway integration with Lambda - For Post
 # -----------------------------
 
-resource "aws_apigatewayv2_integration" "lambda_integration" {
+resource "aws_apigatewayv2_integration" "lambda_post_integration" {
   api_id             = aws_apigatewayv2_api.chat_api.id
   integration_type   = "AWS_PROXY"
-  integration_uri    = aws_lambda_function.chat_handler.invoke_arn
+  integration_uri    = aws_lambda_function.chat_post_handler.invoke_arn
+  integration_method = "POST"
+  payload_format_version = "2.0"
+}
+
+# -----------------------------
+# Setup API Gateway integration with Lambda - For Get
+# -----------------------------
+
+resource "aws_apigatewayv2_integration" "lambda_get_integration" {
+  api_id             = aws_apigatewayv2_api.chat_api.id
+  integration_type   = "AWS_PROXY"
+  integration_uri    = aws_lambda_function.chat_get_handler.invoke_arn
   integration_method = "POST"
   payload_format_version = "2.0"
 }
@@ -119,15 +147,15 @@ resource "aws_apigatewayv2_integration" "lambda_integration" {
 # Creates API gateway route to invoke lambda function when triggered.
 # -----------------------------
 
-resource "aws_apigatewayv2_route" "chat_route" {
+resource "aws_apigatewayv2_route" "chat_post_route" {
   api_id    = aws_apigatewayv2_api.chat_api.id
   route_key = "POST /chat"
-  target    = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda_post_integration.id}"
 }
-resource "aws_apigatewayv2_route" "chat_history_route" {
+resource "aws_apigatewayv2_route" "chat_get_route" {
   api_id    = aws_apigatewayv2_api.chat_api.id
   route_key = "GET /chat-history"
-  target    = "integrations/${aws_apigatewayv2_integration.lambda_integration.id}"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda_get_integration.id}"
 }
 
 
@@ -145,13 +173,22 @@ resource "aws_apigatewayv2_stage" "default" {
 # Permission to allow Gateway API to invoke lambda function
 # -----------------------------
 
-resource "aws_lambda_permission" "allow_apigw_invoke" {
-  statement_id  = "AllowAPIGatewayInvoke"
+resource "aws_lambda_permission" "allow_apigw_invoke_post" {
+  statement_id  = "AllowAPIGatewayInvokePost"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.chat_handler.arn
+  function_name = aws_lambda_function.chat_post_handler.arn
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.chat_api.execution_arn}/*/*"
 }
+
+resource "aws_lambda_permission" "allow_apigw_invoke_get" {
+  statement_id  = "AllowAPIGatewayInvokeGet"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.chat_get_handler.arn
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.chat_api.execution_arn}/*/*"
+}
+
 
 # -----------------------------
 # Cognito User Pool

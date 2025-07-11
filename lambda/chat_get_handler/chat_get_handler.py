@@ -30,7 +30,6 @@ def get_cognito_keys():
 
 def lambda_handler(event, context):
     try:
-        http_method = event.get("requestContext", {}).get("http", {}).get("method", "POST")
         keys = get_cognito_keys()
         # Step 2: Check Authorization header
         print("DEBUG FULL EVENT:", json.dumps(event))
@@ -64,45 +63,16 @@ def lambda_handler(event, context):
                 "headers": CORS_HEADERS
             }
         
-        if http_method == "GET":
-            response = table.query(
-                KeyConditionExpression=boto3.dynamodb.conditions.Key("user_id").eq(user_id)
-            )
-            chat_history = response.get("Items", [])
-            return {
-                "statusCode": 200,
-                "body": json.dumps({"user_id": user_id, "chat_history": chat_history}),
-                "headers": CORS_HEADERS
-            }
-
-        # Step 5: Parse message from body
-        body = json.loads(event["body"])
-        message = body.get("message")
-        if not message:
-            return {
-                "statusCode": 400,
-                "body": json.dumps({"error": "Missing message"})
-            }
-
-        timestamp = datetime.datetime.utcnow().isoformat()
-
-        # Step 6: Write to DynamoDB
-        table.put_item(
-            Item={
-                "user_id": user_id,
-                "timestamp": timestamp,
-                "message": message
-            }
+        response = table.query(
+            KeyConditionExpression=boto3.dynamodb.conditions.Key("user_id").eq(user_id)
         )
-
+        chat_history = response.get("Items", [])
         return {
             "statusCode": 200,
-            "body": json.dumps({
-                "user_id": user_id,
-                "chatbot_reply": "Thanks for your message!"
-            }),
+            "body": json.dumps({"user_id": user_id, "chat_history": chat_history}),
             "headers": CORS_HEADERS
         }
+
     except jwt.ExpiredSignatureError:
         return {
             "statusCode": 401,

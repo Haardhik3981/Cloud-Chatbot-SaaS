@@ -60,7 +60,7 @@ export default function App() {
       const apiUrl = "https://rmgio2nkw5.execute-api.us-west-2.amazonaws.com/chat"; // Replace with terraform output
       const response = await axios.post(
         apiUrl,
-        { message: "Hello from frontend" },
+        { message: "Hello from frontend" }, //Input to ChatGPT
         {
           headers: {
             Authorization: `Bearer ${accessToken}`,
