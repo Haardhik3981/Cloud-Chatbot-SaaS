@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import axios from "axios";
 
 const COGNITO_DOMAIN = "https://chatbot-91d4966b.auth.us-west-2.amazoncognito.com"; 
@@ -7,7 +7,10 @@ const REDIRECT_URI = "http://localhost:5173";
 
 export default function App() {
   const [accessToken, setAccessToken] = useState(null);
-  const [chatHistory, setChatHistory] = useState([]);
+  const [chatHistory, setChatHistory] = useState<{ role: string; message: string }[]>([]);
+  const [inputMessage, setInputMessage] = useState("");
+  const chatEndRef = useRef(null);
+
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -20,6 +23,11 @@ export default function App() {
       console.log("No code present — normal page load.");
     }
   }, []);
+  useEffect(() => {
+    if (chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [chatHistory])
 
   const exchangeCodeForToken = async (code) => {
     try {
@@ -51,27 +59,30 @@ export default function App() {
     window.location.href = `${COGNITO_DOMAIN}/login?response_type=code&client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_URI}`;
   };
 
-  const callProtectedApi = async () => {
-    if (!accessToken) {
-      alert("No token available");
-      return;
-    }
-    try {
-      const apiUrl = "https://rmgio2nkw5.execute-api.us-west-2.amazonaws.com/chat"; // Replace with terraform output
-      const response = await axios.post(
-        apiUrl,
-        { message: "Hello from frontend" }, //Input to ChatGPT
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
-        }
-      );
-      console.log("API response:", response.data);
-    } catch (error) {
-      console.error("API call failed:", error);
-    }
-  };
+  const sendMessage = async () => {
+  if (!accessToken || !inputMessage.trim()) return;
+  try {
+    const apiUrl = "https://rmgio2nkw5.execute-api.us-west-2.amazonaws.com/chat";
+    const response = await axios.post(
+      apiUrl,
+      { message: inputMessage },
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+    setChatHistory((prev) => [
+      ...prev,
+      { role: "user", message: inputMessage },
+      { role: "bot", message: response.data.chatbot_reply }
+    ]);
+    setInputMessage("");
+  } catch (error) {
+    console.error("API call failed:", error);
+  }
+};
+
 
   const fetchChatHistory = async () => {
     if (!accessToken) {
@@ -93,28 +104,39 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col gap-4 p-4">
-      {!accessToken ? (
-        <button onClick={handleLogin} className="bg-blue-600 text-white p-2 rounded-lg">
-          Login with Cognito
-        </button>
-      ) : (
-        <>
-        <button onClick={callProtectedApi} className="bg-green-600 text-white p-2 rounded-lg">
-          Call Secured Chat API
-        </button>
-        <button onClick={fetchChatHistory} className="bg-purple-600 text-white p-2 rounded-lg">
-          Fetch Chat History
-        </button>
-        <div className="mt-4">
-          {chatHistory.map((item, index) => (
-            <div key={index} className="p-2 border-b">
-              {item.timestamp} — {item.message}
+    <div className="flex flex-col justify-center items-center min-h-screen bg-white p-4">
+      <div className="w-full max-w-md flex flex-col gap-2 bg-white border rounded-lg shadow-lg p-4">
+        {!accessToken ? (
+          <button onClick={handleLogin} className="bg-blue-600 text-white p-2 rounded-lg">
+            Login with Cognito
+          </button>
+        ) : (
+          <>
+          <div className="flex flex-col gap-2">
+            <div className="flex-1 overflow-y-auto border p-2 min-h-[300px] max-h-[70vh]">
+              {chatHistory.map((item, index) => (
+                <div key={index} className={`flex ${item.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div className={`p-2 rounded-2xl my-1 shadow-md max-w-[75%] ${item.role === "user" ? "bg-blue-500 text-white" : "bg-gray-200 text-gray-900"}`}>
+                    {item.message}
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        </>
-      )}
+            <div className="flex gap-2">
+              <input
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                className="flex-grow border rounded-lg p-2"
+                placeholder="Type your massage..."
+              />
+              <button onClick={sendMessage} className="bg-green-600 text-white p-2 rounded-lg">
+                Send
+              </button>
+            </div>
+          </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
