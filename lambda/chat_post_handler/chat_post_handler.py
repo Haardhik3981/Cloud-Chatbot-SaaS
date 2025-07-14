@@ -4,6 +4,7 @@ import datetime
 import os
 import requests
 from jose import jwt
+from boto3.dynamodb.conditions import Key
 
 # Environment Variable Setup (Add these in Terraform later)
 USER_POOL_ID = "us-west-2_p7H56KCgz"
@@ -83,6 +84,19 @@ def lambda_handler(event, context):
                 "message": message
             }
         )
+        # Step 7: Retrieve last 10 messages for context
+        response = table.query(
+            KeyConditionExpression=Key('user_id').eq(user_id),
+            Limit=10,
+            ScanIndexForward=False
+        )
+        chat_history = response.get("Items", [])
+        chat_history = sorted(chat_history, key=lambda x: x['timestamp'])
+
+        # Prepare GPT-4 message array
+        gpt_messages = [{"role": "user", "content": item["message"]} for item in chat_history]
+        gpt_messages.append({"role": "user", "content": message})
+
         # Step 7: Call GPT-4o-mini
         response = requests.post(
             OPENAI_API_URL,
@@ -92,7 +106,7 @@ def lambda_handler(event, context):
             },
             json={
                 "model": "gpt-4o-mini",
-                "messages": [{"role": "user", "content": message}],
+                "messages": gpt_messages,
                 "max_tokens": 50
             }
         )

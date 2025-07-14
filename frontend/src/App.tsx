@@ -1,15 +1,19 @@
+
 import { useEffect, useState, useRef } from "react";
 import axios from "axios";
 
 const COGNITO_DOMAIN = "https://chatbot-91d4966b.auth.us-west-2.amazoncognito.com"; 
 const CLIENT_ID = "7omafgdpaj2lgrb7dj7h8h2b0f";
 const REDIRECT_URI = "http://localhost:5173";
+//http://localhost:5173
+//https://d3pb94cafp68vt.cloudfront.net
+//https://chatbot-91d4966b.auth.us-west-2.amazoncognito.com/login?response_type=code&client_id=7omafgdpaj2lgrb7dj7h8h2b0f&redirect_uri=http://localhost:3000
 
 export default function App() {
   const [accessToken, setAccessToken] = useState(null);
   const [chatHistory, setChatHistory] = useState<{ role: string; message: string }[]>([]);
   const [inputMessage, setInputMessage] = useState("");
-  const chatEndRef = useRef(null);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
 
 
   useEffect(() => {
@@ -29,7 +33,7 @@ export default function App() {
     }
   }, [chatHistory])
 
-  const exchangeCodeForToken = async (code) => {
+  const exchangeCodeForToken = async (code: string) => {
     try {
       const params = new URLSearchParams();
       params.append("grant_type", "authorization_code");
@@ -49,6 +53,7 @@ export default function App() {
 
       console.log("Tokens:", response.data);
       setAccessToken(response.data.access_token);
+      fetchChatHistory(response.data.access_token);
       window.history.replaceState({}, document.title, "/");
     } catch (error) {
       console.error("Token exchange failed:", error);
@@ -84,8 +89,8 @@ export default function App() {
 };
 
 
-  const fetchChatHistory = async () => {
-    if (!accessToken) {
+  const fetchChatHistory = async (token = accessToken) => {
+    if (!token) {
       alert("No token available");
       return;
     }
@@ -93,13 +98,28 @@ export default function App() {
       const apiUrl = "https://rmgio2nkw5.execute-api.us-west-2.amazonaws.com/chat-history"; // Replace with terraform output
       const response = await axios.get(apiUrl, {
         headers: {
-          Authorization: `Bearer ${accessToken}`,
+          Authorization: `Bearer ${token}`,
         },
       });
       console.log("Chat history:", response.data);
       setChatHistory(response.data.chat_history || []);
     } catch (error) {
       console.error("Fetching chat history failed:", error);
+    }
+  };
+
+  const clearChatHistory = async () => {
+    if (!accessToken) return;
+    try {
+      const apiUrl = "https://rmgio2nkw5.execute-api.us-west-2.amazonaws.com/clear-chat";
+      await axios.post(apiUrl, {}, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+      setChatHistory([]);
+    } catch (error) {
+      console.error("Clearing chat history failed:", error);
     }
   };
 
@@ -134,6 +154,9 @@ export default function App() {
               </button>
             </div>
           </div>
+        <button onClick={clearChatHistory} className="bg-red-600 text-white p-2 rounded-lg">
+          Clear Chat History
+        </button>
           </>
         )}
       </div>

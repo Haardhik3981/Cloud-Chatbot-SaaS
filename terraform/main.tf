@@ -1,3 +1,4 @@
+#main.tf
 provider "aws" {
   region = "us-west-2"
 }
@@ -67,7 +68,8 @@ resource "aws_iam_role_policy" "lambda_dynamodb_policy" {
           "dynamodb:PutItem",
           "dynamodb:GetItem",
           "dynamodb:Query",
-          "dynamodb:Scan"
+          "dynamodb:Scan",
+          "dynamodb:BatchWriteItem"
         ],
         Resource = aws_dynamodb_table.chat_logs.arn
       }
@@ -225,8 +227,8 @@ resource "aws_cognito_user_pool_client" "chatbot_app_client" {
   allowed_oauth_flows_user_pool_client = true
   allowed_oauth_flows = ["code"]
   allowed_oauth_scopes = ["email", "openid", "profile"]
-  callback_urls = ["http://localhost:3000", "http://localhost:5173"]
-  logout_urls   = ["http://localhost:3000", "https://your-domain.com"]
+  callback_urls = ["http://localhost:3000", "http://localhost:5173", "https://d3pb94cafp68vt.cloudfront.net"]
+  logout_urls   = ["http://localhost:3000", "https://your-domain.com", "https://d3pb94cafp68vt.cloudfront.net"]
   supported_identity_providers = ["COGNITO"]
 }
 
@@ -237,4 +239,123 @@ resource "aws_cognito_user_pool_domain" "chatbot_domain" {
 
 resource "random_id" "rand" {
   byte_length = 4
+}
+
+# -----------------------------
+# Create S3 Bucket for Hosting Frontend
+# -----------------------------
+resource "aws_s3_bucket" "frontend_bucket" {
+  bucket = "cloud-chatbot-frontend-${random_id.rand.hex}"
+}
+
+resource "aws_s3_bucket_public_access_block" "frontend_block" {
+  bucket = aws_s3_bucket.frontend_bucket.id
+
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
+}
+
+resource "aws_s3_bucket_website_configuration" "frontend_website" {
+  bucket = aws_s3_bucket.frontend_bucket.id
+
+  index_document {
+    suffix = "index.html"
+  }
+
+  error_document {
+    key = "index.html"
+  }
+}
+
+# -----------------------------
+# Create Policy for S3 Bucket for Hosting Frontend
+# -----------------------------
+
+resource "aws_s3_bucket_policy" "frontend_bucket_policy" {
+  bucket = aws_s3_bucket.frontend_bucket.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [{
+      Effect = "Allow",
+      Principal = "*",
+      Action = "s3:GetObject",
+      Resource = "${aws_s3_bucket.frontend_bucket.arn}/*"
+    }]
+  })
+}
+
+# -----------------------------
+# Create CloudFront Distribution - CloudFront serves your static frontend over HTTPS globally.
+# -----------------------------
+
+resource "aws_cloudfront_distribution" "frontend_cdn" {
+  origin {
+    domain_name = aws_s3_bucket.frontend_bucket.bucket_regional_domain_name
+    origin_id   = "frontendS3Origin"
+  }
+
+  enabled             = true
+  is_ipv6_enabled     = true
+  default_root_object = "index.html"
+
+  default_cache_behavior {
+    allowed_methods  = ["GET", "HEAD"]
+    cached_methods   = ["GET", "HEAD"]
+    target_origin_id = "frontendS3Origin"
+
+    viewer_protocol_policy = "redirect-to-https"
+
+    forwarded_values {
+      query_string = false
+      cookies {
+        forward = "none"
+      }
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+}
+
+# -----------------------------
+#Chat Clear API - new lambda function, new Gateway API created, new Route to connect these 2, and permissions.
+# -----------------------------
+resource "aws_lambda_function" "chat_clear_handler" {
+  function_name = "chatClearHandler"
+  filename      = "${path.module}/../lambda/chat_clear_handler.zip"
+  handler       = "chat_clear_handler.lambda_handler"
+  runtime       = "python3.11"
+  role          = aws_iam_role.lambda_exec_role.arn
+  source_code_hash = filebase64sha256("${path.module}/../lambda/chat_clear_handler.zip")
+}
+
+resource "aws_apigatewayv2_integration" "lambda_clear_integration" {
+  api_id             = aws_apigatewayv2_api.chat_api.id
+  integration_type   = "AWS_PROXY"
+  integration_uri    = aws_lambda_function.chat_clear_handler.invoke_arn
+  integration_method = "POST"
+  payload_format_version = "2.0"
+}
+
+resource "aws_apigatewayv2_route" "clear_chat_route" {
+  api_id    = aws_apigatewayv2_api.chat_api.id
+  route_key = "POST /clear-chat"
+  target    = "integrations/${aws_apigatewayv2_integration.lambda_clear_integration.id}"
+}
+
+resource "aws_lambda_permission" "allow_apigw_clear_invoke" {
+  statement_id  = "AllowAPIGatewayClearInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.chat_clear_handler.arn
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.chat_api.execution_arn}/*/*"
 }
