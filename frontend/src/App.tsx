@@ -63,6 +63,11 @@ export default function App() {
   const handleLogin = () => {
     window.location.href = `${COGNITO_DOMAIN}/login?response_type=code&client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_URI}`;
   };
+  const handleLogout = () => {
+    setAccessToken(null);
+    setChatHistory([]);
+    window.location.href = `${COGNITO_DOMAIN}/logout?client_id=${CLIENT_ID}&logout_uri=${REDIRECT_URI}`;
+  };
 
   const sendMessage = async () => {
   if (!accessToken || !inputMessage.trim()) return;
@@ -133,6 +138,10 @@ export default function App() {
         ) : (
           <>
           <div className="flex flex-col gap-2">
+            <button onClick={handleLogout} className="bg-gray-600 text-white p-2 rounded-lg">
+              Logout
+            </button>
+
             <div className="flex-1 overflow-y-auto border p-2 min-h-[300px] max-h-[70vh]">
               {chatHistory.map((item, index) => (
                 <div key={index} className={`flex ${item.role === "user" ? "justify-end" : "justify-start"}`}>

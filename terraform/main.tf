@@ -228,7 +228,7 @@ resource "aws_cognito_user_pool_client" "chatbot_app_client" {
   allowed_oauth_flows = ["code"]
   allowed_oauth_scopes = ["email", "openid", "profile"]
   callback_urls = ["http://localhost:3000", "http://localhost:5173", "https://d3pb94cafp68vt.cloudfront.net"]
-  logout_urls   = ["http://localhost:3000", "https://your-domain.com", "https://d3pb94cafp68vt.cloudfront.net"]
+  logout_urls   = ["http://localhost:3000", "http://localhost:5173", "https://d3pb94cafp68vt.cloudfront.net"]
   supported_identity_providers = ["COGNITO"]
 }
 
