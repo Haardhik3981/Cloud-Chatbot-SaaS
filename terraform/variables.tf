@@ -7,3 +7,9 @@ variable "openai_api_key" {
   type        = string
   sensitive   = true
 }
+
+variable "pinecone_api_key" {
+  description = "Pinecone API key for vector embeddings"
+  type        = string
+  sensitive   = true
+}

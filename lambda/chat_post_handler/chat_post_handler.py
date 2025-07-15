@@ -4,6 +4,7 @@ import datetime
 import os
 import requests
 from jose import jwt
+from uuid import uuid4
 from boto3.dynamodb.conditions import Key
 
 # Environment Variable Setup (Add these in Terraform later)
@@ -74,13 +75,14 @@ def lambda_handler(event, context):
                 "body": json.dumps({"error": "Missing message"})
             }
 
-        timestamp = datetime.datetime.utcnow().isoformat()
+        timestamp = datetime.datetime.utcnow().isoformat(timespec='microseconds')
 
         # Step 6: Write to DynamoDB
         table.put_item(
             Item={
                 "user_id": user_id,
-                "timestamp": timestamp,
+                "timestamp": datetime.datetime.utcnow().isoformat(timespec='microseconds'),
+                "role": "user",
                 "message": message
             }
         )
@@ -111,6 +113,15 @@ def lambda_handler(event, context):
             }
         )
         gpt_reply = response.json()["choices"][0]["message"]["content"]
+        table.put_item(
+            Item={
+                "user_id": user_id,
+                "timestamp": datetime.datetime.utcnow().isoformat(timespec='microseconds'),
+                "role": "bot",
+                "message": gpt_reply
+            }
+        )
+
         return {
             "statusCode": 200,
             "body": json.dumps({
