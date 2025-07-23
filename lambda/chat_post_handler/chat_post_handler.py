@@ -4,7 +4,6 @@ import datetime
 import os
 import requests
 from jose import jwt
-from uuid import uuid4
 from boto3.dynamodb.conditions import Key
 
 # Environment Variable Setup (Add these in Terraform later)
